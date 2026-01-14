@@ -36,7 +36,8 @@ int run_client(const char* ip = DEFAULT_SERVER_IP, int port = DEFAULT_PORT) {
 
     // 启动 client 的接收线程并示例发起一次任务请求
     auto client_recv_thread = start_client_receiver_thread();
-    client_recv_thread.detach(); // 或者保存并 join，示例中 detach 以便主流程继续
+    // 注意：detach 使线程在后台运行，简化示例流程，实际应用中建议保存线程句柄并在程序退出时 join
+    client_recv_thread.detach();
 
     // 发起一个 TASK_REQUEST 并等待打印结果（默认 5s 超时）
     client_request_task_and_wait_print();

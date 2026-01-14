@@ -220,6 +220,7 @@ string read_remote ()  // 直接将指定 remote_addr 里的数据搬到本地 m
 }
 
 // 客户端接收线程：轮询CQ并处理完成事件
+// 注意：这是一个示例实现，实际生产环境中应该添加优雅退出机制
 void client_receiver_loop() {
     cout << "客户端接收线程已启动" << endl;
     
@@ -231,9 +232,14 @@ void client_receiver_loop() {
             // 处理完成事件
             if (wc.status == IBV_WC_SUCCESS) {
                 if (wc.opcode == IBV_WC_RECV) {
-                    // 接收到消息
+                    // 接收到消息，安全地处理数据
                     char* data = static_cast<char*>(client.mr->addr);
-                    cout << "[接收线程] 收到服务器消息: " << data << endl;
+                    // 确保字符串有效性：限制长度并添加空终止符
+                    size_t max_len = BUFFER_SIZE - 1;
+                    char safe_buffer[BUFFER_SIZE];
+                    memcpy(safe_buffer, data, max_len);
+                    safe_buffer[max_len] = '\0';
+                    cout << "[接收线程] 收到服务器消息: " << safe_buffer << endl;
                     
                     // 重新提交接收请求以便继续接收
                     ibv_recv_wr wr;
@@ -277,7 +283,8 @@ bool client_request_task_and_wait_print(int timeout_ms) {
     
     cout << "TASK_REQUEST 已发送，等待服务器响应（超时 " << timeout_ms << "ms）..." << endl;
     
-    // 等待响应（简化版本：只是等待一段时间）
+    // 注意：这是一个简化的示例实现，仅用于演示API调用流程
+    // 实际应用中应该实现真实的响应检测机制（例如：检查接收队列、使用条件变量等）
     auto start_time = chrono::steady_clock::now();
     auto timeout_duration = chrono::milliseconds(timeout_ms);
     
@@ -291,7 +298,7 @@ bool client_request_task_and_wait_print(int timeout_ms) {
         // 实际应该检查是否收到响应，这里简化处理
         this_thread::sleep_for(chrono::milliseconds(100));
         
-        // 模拟收到响应后退出
+        // 模拟收到响应后退出（仅用于演示）
         if (elapsed >= chrono::milliseconds(500)) {
             cout << "[TASK_REQUEST] 收到服务器响应（模拟）" << endl;
             return true;
