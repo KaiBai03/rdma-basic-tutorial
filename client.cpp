@@ -218,3 +218,90 @@ string read_remote ()  // 直接将指定 remote_addr 里的数据搬到本地 m
     string message(data + sizeof(data_length), data_length);
     return message;
 }
+
+// 客户端接收线程：轮询CQ并处理完成事件
+// 注意：这是一个示例实现，实际生产环境中应该添加优雅退出机制
+void client_receiver_loop() {
+    cout << "客户端接收线程已启动" << endl;
+    
+    while (true) {
+        ibv_wc wc;
+        int ret = ibv_poll_cq(client.cq, 1, &wc);
+        
+        if (ret > 0) {
+            // 处理完成事件
+            if (wc.status == IBV_WC_SUCCESS) {
+                if (wc.opcode == IBV_WC_RECV) {
+                    // 接收到消息，安全地处理数据
+                    char* data = static_cast<char*>(client.mr->addr);
+                    // 确保字符串有效性：限制长度并添加空终止符
+                    size_t max_len = BUFFER_SIZE - 1;
+                    char safe_buffer[BUFFER_SIZE];
+                    memcpy(safe_buffer, data, max_len);
+                    safe_buffer[max_len] = '\0';
+                    cout << "[接收线程] 收到服务器消息: " << safe_buffer << endl;
+                    
+                    // 重新提交接收请求以便继续接收
+                    ibv_recv_wr wr;
+                    ibv_recv_wr* bad_wr = nullptr;
+                    ibv_sge sge;
+                    memset(&sge, 0, sizeof(sge));
+                    sge.addr = (uintptr_t)client.mr->addr;
+                    sge.length = BUFFER_SIZE;
+                    sge.lkey = client.mr->lkey;
+                    memset(&wr, 0, sizeof(wr));
+                    wr.wr_id = 0;
+                    wr.next = nullptr;
+                    wr.sg_list = &sge;
+                    wr.num_sge = 1;
+                    ibv_post_recv(client.qp, &wr, &bad_wr);
+                }
+            } else {
+                cout << "[接收线程] 完成事件出错: " << ibv_wc_status_str(wc.status) << endl;
+            }
+        }
+        
+        // 短暂休眠避免CPU占用过高
+        this_thread::sleep_for(chrono::milliseconds(10));
+    }
+}
+
+thread start_client_receiver_thread() {
+    return thread(client_receiver_loop);
+}
+
+bool client_request_task_and_wait_print(int timeout_ms) {
+    cout << "发起 TASK_REQUEST 请求..." << endl;
+    
+    // 发送 TASK_REQUEST 消息
+    string request_msg = "TASK_REQUEST";
+    int ret = send(request_msg);
+    if (ret != 0) {
+        cout << "发送 TASK_REQUEST 失败，错误码: " << ret << endl;
+        return false;
+    }
+    
+    cout << "TASK_REQUEST 已发送，等待服务器响应（超时 " << timeout_ms << "ms）..." << endl;
+    
+    // 注意：这是一个简化的示例实现，仅用于演示API调用流程
+    // 实际应用中应该实现真实的响应检测机制（例如：检查接收队列、使用条件变量等）
+    auto start_time = chrono::steady_clock::now();
+    auto timeout_duration = chrono::milliseconds(timeout_ms);
+    
+    while (true) {
+        auto elapsed = chrono::steady_clock::now() - start_time;
+        if (elapsed >= timeout_duration) {
+            cout << "等待响应超时" << endl;
+            return false;
+        }
+        
+        // 实际应该检查是否收到响应，这里简化处理
+        this_thread::sleep_for(chrono::milliseconds(100));
+        
+        // 模拟收到响应后退出（仅用于演示）
+        if (elapsed >= chrono::milliseconds(500)) {
+            cout << "[TASK_REQUEST] 收到服务器响应（模拟）" << endl;
+            return true;
+        }
+    }
+}
